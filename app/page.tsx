@@ -2,10 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { useAccount } from 'wagmi';
+import { useAccount, useDisconnect } from 'wagmi'; // On importe useDisconnect
 import WalletInfo from '../components/WalletInfo';
-// import SendTransaction from '../components/SendTransaction'; // <-- On l'enlève
-import SmartTransfer from '../components/SmartTransfer'; // <-- On met le nouveau
+import SmartTransfer from '../components/SmartTransfer';
 import TokenCard from '../components/TokenCard';
 import WalletRow from '../components/WalletRow';
 import TotalBalance from '../components/TotalBalance';
@@ -30,68 +29,130 @@ const TOKEN_MAP: Record<number, { address: `0x${string}`; name: string; symbol: 
 
 export default function Home() {
   const { address: connectedAddress, isConnected, chainId } = useAccount();
+  const { disconnect } = useDisconnect(); // Le hook pour déconnecter manuellement
 
+  // --- ÉTATS (STATE) ---
   const [myWallets, setMyWallets] = useState<string[]>([]);
-  const [newWalletInput, setNewWalletInput] = useState('');
   const [selectedWallets, setSelectedWallets] = useState<string[]>([]);
   const [selectedTokenAddress, setSelectedTokenAddress] = useState<string>('');
+  const [isLoaded, setIsLoaded] = useState(false); 
 
-  // --- EFFETS ---
+  // --- 1. PERSISTANCE (LocalStorage) ---
   useEffect(() => {
-    if (connectedAddress && !myWallets.includes(connectedAddress)) {
-      setMyWallets(prev => [...prev, connectedAddress]);
-      setSelectedWallets(prev => [...prev, connectedAddress]);
-    }
-  }, [connectedAddress]);
+    const savedWallets = localStorage.getItem('myPortfolio_wallets');
+    const savedSelection = localStorage.getItem('myPortfolio_selection');
+    
+    if (savedWallets) setMyWallets(JSON.parse(savedWallets));
+    if (savedSelection) setSelectedWallets(JSON.parse(savedSelection));
+    setIsLoaded(true);
+  }, []);
 
+  useEffect(() => {
+    if (isLoaded) {
+      localStorage.setItem('myPortfolio_wallets', JSON.stringify(myWallets));
+      localStorage.setItem('myPortfolio_selection', JSON.stringify(selectedWallets));
+    }
+  }, [myWallets, selectedWallets, isLoaded]);
+
+  // --- 2. AJOUT AUTOMATIQUE ---
+  // Dès qu'un nouveau wallet est connecté, on l'ajoute à la liste
+  useEffect(() => {
+    if (connectedAddress && isLoaded) {
+      if (!myWallets.includes(connectedAddress)) {
+        setMyWallets(prev => [...prev, connectedAddress]);
+        // On le sélectionne par défaut pour que l'utilisateur le voie tout de suite
+        if (!selectedWallets.includes(connectedAddress)) {
+            setSelectedWallets(prev => [...prev, connectedAddress]);
+        }
+      }
+    }
+  }, [connectedAddress, isLoaded]); 
+
+  // --- GESTION TOKENS ---
   const availableTokens = chainId ? TOKEN_MAP[chainId] || [] : [];
   useEffect(() => {
-    if (availableTokens.length > 0) setSelectedTokenAddress(availableTokens[0].address);
-    else setSelectedTokenAddress('');
-  }, [chainId]);
+    if (availableTokens.length > 0 && !selectedTokenAddress) {
+        setSelectedTokenAddress(availableTokens[0].address);
+    }
+  }, [chainId, availableTokens]);
 
   // --- FONCTIONS ---
-  const addWallet = () => {
-    if (!newWalletInput.startsWith('0x') || newWalletInput.length !== 42) return;
-    if (myWallets.includes(newWalletInput)) return;
-    setMyWallets([...myWallets, newWalletInput]);
-    setSelectedWallets([...selectedWallets, newWalletInput]);
-    setNewWalletInput('');
-  };
-
   const removeWallet = (w: string) => {
-    setMyWallets(myWallets.filter(x => x !== w));
+    const newList = myWallets.filter(x => x !== w);
+    setMyWallets(newList);
     setSelectedWallets(selectedWallets.filter(x => x !== w));
+    if (newList.length === 0) localStorage.removeItem('myPortfolio_wallets');
   };
 
   const toggleSelection = (w: string) => {
     selectedWallets.includes(w) ? setSelectedWallets(selectedWallets.filter(x => x !== w)) : setSelectedWallets([...selectedWallets, w]);
   };
 
+  if (!isLoaded) return <div className="min-h-screen bg-gray-950 flex items-center justify-center text-white">Chargement...</div>;
+
   return (
     <div className="flex min-h-screen bg-gray-950 text-white font-sans">
       
-      {/* SIDEBAR */}
+      {/* --- SIDEBAR GAUCHE --- */}
       <div className="w-80 bg-gray-900 border-r border-gray-800 p-6 flex flex-col gap-6 h-screen sticky top-0">
         <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
           My Portfolio
         </h1>
+        
         <div className="space-y-4">
-          <ConnectButton showBalance={false} />
-          <div className="flex gap-2">
-            <input 
-              type="text" placeholder="Ajouter 0x..." 
-              className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-xs focus:outline-none focus:border-blue-500"
-              value={newWalletInput} onChange={(e) => setNewWalletInput(e.target.value)}
-            />
-            <button onClick={addWallet} className="bg-blue-600 hover:bg-blue-500 text-white px-3 rounded text-lg font-bold">+</button>
+          <div className="w-full">
+            
+            {/* 1. Le Wallet ACTIF (Celui connecté actuellement) */}
+            <div className="mb-4 p-3 bg-gray-800/50 rounded-lg border border-gray-700">
+               <p className="text-[10px] text-gray-500 uppercase font-bold mb-2">Pilote Actif</p>
+               <ConnectButton showBalance={false} chainStatus="icon" accountStatus="full" />
+            </div>
+
+            {/* 2. LE BOUTON MAGIQUE "AJOUTER UN AUTRE" */}
+            <ConnectButton.Custom>
+              {({ openConnectModal, authenticationStatus, mounted }) => {
+                const ready = mounted && authenticationStatus !== 'loading';
+                return (
+                  <div
+                    {...(!ready && {
+                      'aria-hidden': true,
+                      'style': { opacity: 0, pointerEvents: 'none', userSelect: 'none' },
+                    })}
+                  >
+                    <button
+                      onClick={() => {
+                        // C'EST ICI QUE LA MAGIE OPÈRE :
+                        // Si on est déjà connecté, on force la déconnexion pour pouvoir en ajouter un autre
+                        if (isConnected) {
+                            disconnect();
+                        }
+                        // On attend un tout petit peu que la déconnexion se fasse, puis on ouvre le menu
+                        setTimeout(openConnectModal, 100);
+                      }}
+                      type="button"
+                      className="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 px-4 rounded-lg font-bold flex items-center justify-center gap-2 transition-transform active:scale-95 shadow-lg"
+                    >
+                      <span className="text-xl">+</span>
+                      <span>Ajouter un autre wallet</span>
+                    </button>
+                  </div>
+                );
+              }}
+            </ConnectButton.Custom>
+
+            <p className="text-[10px] text-gray-500 mt-2 text-center px-2">
+              Astuce : Cliquez sur "+" pour connecter un Ledger ou un autre compte MetaMask.
+            </p>
           </div>
         </div>
-        <div className="flex-grow overflow-y-auto space-y-2">
-           <div className="flex justify-between items-center">
-             <h3 className="text-xs text-gray-500 uppercase font-semibold">Mes Wallets</h3>
+
+        {/* LISTE MÉMOIRE (Les wallets sauvegardés) */}
+        <div className="flex-grow overflow-y-auto space-y-2 pt-2 border-t border-gray-800 mt-2">
+           <div className="flex justify-between items-center mt-4">
+             <h3 className="text-xs text-gray-500 uppercase font-semibold">Mes Wallets ({myWallets.length})</h3>
              <button onClick={() => setSelectedWallets(myWallets)} className="text-[10px] text-blue-400 underline">Tout cocher</button>
            </div>
+          
           {myWallets.map(wallet => (
             <WalletRow 
               key={wallet} address={wallet} isSelected={selectedWallets.includes(wallet)}
@@ -101,7 +162,7 @@ export default function Home() {
         </div>
       </div>
 
-      {/* MAIN CONTENT */}
+      {/* --- CONTENU DROITE (MAIN) --- */}
       <div className="flex-1 p-10 overflow-y-auto bg-gray-950">
         
         {/* HEADER */}
@@ -127,24 +188,22 @@ export default function Home() {
             />
         )}
 
-        {/* LISTE DES CARTES */}
+        {/* GRILLE DES CARTES */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {selectedWallets.map(walletAddr => (
-            <div key={walletAddr} className={`bg-gray-900 border rounded-xl p-6 shadow-xl space-y-4 transition-all ${walletAddr === connectedAddress ? 'border-green-800/50' : 'border-gray-800'}`}>
+            <div key={walletAddr} className={`bg-gray-900 border rounded-xl p-6 shadow-xl space-y-4 transition-all ${walletAddr === connectedAddress ? 'border-green-500 shadow-green-900/20 shadow-lg' : 'border-gray-800'}`}>
               
               <div className="flex justify-between items-start border-b border-gray-800 pb-3 mb-2">
                 <div>
                   <p className="font-mono text-xs text-gray-400">{walletAddr.slice(0, 6)}...{walletAddr.slice(-4)}</p>
                 </div>
                 {walletAddr === connectedAddress && (
-                   <span className="bg-green-900/40 text-green-400 text-[10px] px-2 py-0.5 rounded border border-green-800">Connecté</span>
+                   <span className="bg-green-600 text-white text-[10px] px-2 py-0.5 rounded font-bold animate-pulse">PILOTE</span>
                 )}
               </div>
 
-              {/* Solde Natif */}
               <WalletInfo address={walletAddr as `0x${string}`} />
 
-              {/* Solde Token */}
               {selectedTokenAddress && (
                 <div className="pt-2">
                   <TokenCard 
@@ -157,11 +216,9 @@ export default function Home() {
           ))}
         </div>
 
-        {/* --- C'EST ICI QUE CA CHANGE --- */}
-        {/* On a remplacé SendTransaction par SmartTransfer */}
+        {/* COUTEAU SUISSE (VIREMENT) */}
         {isConnected && (
           <div className="mt-12 pt-8 border-t border-gray-800">
-             {/* On passe la liste 'myWallets' au composant pour le menu déroulant */}
              <SmartTransfer myWallets={myWallets} />
           </div>
         )}

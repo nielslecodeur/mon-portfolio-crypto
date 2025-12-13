@@ -1,45 +1,42 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useAccount, useSendTransaction } from 'wagmi';
+import { useAccount, useSendTransaction, useDisconnect } from 'wagmi'; // Ajout useDisconnect
+import { useConnectModal } from '@rainbow-me/rainbowkit'; // Ajout pour ouvrir la fenêtre
 import { parseEther } from 'viem';
 
 interface SmartTransferProps {
-  myWallets: string[]; // La liste de tes wallets pour le menu déroulant
+  myWallets: string[];
 }
 
 export default function SmartTransfer({ myWallets }: SmartTransferProps) {
   const { address: connectedAddress } = useAccount();
+  const { disconnect } = useDisconnect(); // Le hook pour déconnecter
+  const { openConnectModal } = useConnectModal(); // Le hook pour ouvrir la fenêtre RainbowKit
   const { sendTransaction, isPending, data: hash } = useSendTransaction();
 
-  // États du formulaire
   const [fromWallet, setFromWallet] = useState('');
   const [toWallet, setToWallet] = useState('');
   const [amount, setAmount] = useState('');
-  const [isExternal, setIsExternal] = useState(false); // Est-ce un virement vers un inconnu ?
+  const [isExternal, setIsExternal] = useState(false);
 
-  // Au démarrage, on sélectionne le wallet connecté comme expéditeur
   useEffect(() => {
     if (connectedAddress) {
       setFromWallet(connectedAddress);
     }
   }, [connectedAddress]);
 
-  // L'ASTUCE DU CHEF : Fonction pour forcer MetaMask à changer de compte
-  const requestSwitchWallet = async () => {
-    try {
-      // @ts-ignore (Car window.ethereum n'est pas toujours défini en standard TypeScript)
-      if (window.ethereum) {
-        // Cette commande force MetaMask à ouvrir la fenêtre "Connecter un compte"
-        // @ts-ignore
-        await window.ethereum.request({
-          method: "wallet_requestPermissions",
-          params: [{ eth_accounts: {} }]
-        });
+  // LA NOUVELLE FONCTION UNIVERSELLE
+  const handleSwitchWallet = () => {
+    // 1. On déconnecte le wallet actuel
+    disconnect();
+    
+    // 2. On ouvre la fenêtre de choix (avec un micro délai pour que la déconnexion soit prise en compte)
+    setTimeout(() => {
+      if (openConnectModal) {
+        openConnectModal();
       }
-    } catch (error) {
-      console.error("Erreur switch:", error);
-    }
+    }, 100);
   };
 
   const handleSend = (e: React.FormEvent) => {
@@ -52,7 +49,6 @@ export default function SmartTransfer({ myWallets }: SmartTransferProps) {
     });
   };
 
-  // Vérification : Est-ce que le wallet "De" est bien celui connecté ?
   const isWrongWallet = fromWallet.toLowerCase() !== connectedAddress?.toLowerCase();
 
   return (
@@ -63,7 +59,7 @@ export default function SmartTransfer({ myWallets }: SmartTransferProps) {
 
       <form onSubmit={handleSend} className="space-y-5">
         
-        {/* LIGNE 1 : DE (Source) */}
+        {/* DE (Émetteur) */}
         <div>
           <label className="text-xs text-gray-500 uppercase font-bold">De (Émetteur)</label>
           <select 
@@ -79,7 +75,7 @@ export default function SmartTransfer({ myWallets }: SmartTransferProps) {
             ))}
           </select>
 
-          {/* ALERTE INTELLIGENTE : Si le wallet choisi n'est pas connecté */}
+          {/* ALERTE INTELLIGENTE CORRIGÉE */}
           {isWrongWallet && (
             <div className="mt-2 p-3 bg-yellow-900/30 border border-yellow-700/50 rounded flex justify-between items-center animate-in slide-in-from-top-2">
               <span className="text-xs text-yellow-500">
@@ -87,16 +83,16 @@ export default function SmartTransfer({ myWallets }: SmartTransferProps) {
               </span>
               <button 
                 type="button"
-                onClick={requestSwitchWallet}
+                onClick={handleSwitchWallet} // <--- On utilise la nouvelle fonction
                 className="text-xs bg-yellow-600 hover:bg-yellow-500 text-white px-3 py-1.5 rounded font-bold transition-colors"
               >
-                ⚡ Changer de Wallet (MetaMask)
+                ⚡ Activer ce Wallet
               </button>
             </div>
           )}
         </div>
 
-        {/* LIGNE 2 : VERS (Destination) */}
+        {/* VERS (Destinataire) */}
         <div>
           <div className="flex justify-between">
             <label className="text-xs text-gray-500 uppercase font-bold">Vers (Destinataire)</label>
@@ -117,7 +113,7 @@ export default function SmartTransfer({ myWallets }: SmartTransferProps) {
             >
               <option value="">-- Choisir le destinataire --</option>
               {myWallets
-                .filter(w => w !== fromWallet) // On n'affiche pas l'émetteur dans la liste
+                .filter(w => w !== fromWallet)
                 .map(w => (
                   <option key={w} value={w}>
                     📥 {w.slice(0, 6)}...{w.slice(-4)}
@@ -135,7 +131,7 @@ export default function SmartTransfer({ myWallets }: SmartTransferProps) {
           )}
         </div>
 
-        {/* LIGNE 3 : MONTANT */}
+        {/* MONTANT */}
         <div>
           <label className="text-xs text-gray-500 uppercase font-bold">Montant (ETH/BNB)</label>
           <input 
