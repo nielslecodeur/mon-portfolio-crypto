@@ -5,16 +5,25 @@ import {
   RainbowKitProvider,
   getDefaultConfig,
 } from '@rainbow-me/rainbowkit';
-// 1. On importe les réseaux qu'on veut (Mainnet = Vrais sous)
-import { sepolia, bsc, polygon, mainnet, arbitrum, base } from 'wagmi/chains';
+import { 
+  mainnet, 
+  polygon, 
+  bsc, 
+  arbitrum, 
+  base, 
+  sepolia, 
+  zkSync // C'est le bon import !
+} from 'wagmi/chains';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { WagmiProvider, http } from 'wagmi';
 
 const config = getDefaultConfig({
   appName: 'Mon Portfolio Crypto',
-  projectId: 'YOUR_PROJECT_ID', 
-  // 2. On les ajoute à la liste ici
-  chains: [mainnet, polygon, bsc, arbitrum, base, sepolia],
+  // ⚠️ IMPORTANT : Va sur https://cloud.walletconnect.com/ pour avoir un vrai ID gratuit
+  projectId: '570688819ee13a1a0d3c35b25eab93c1', 
+  
+  chains: [mainnet, polygon, bsc, arbitrum, base, sepolia, zkSync],
+  
   transports: {
     [mainnet.id]: http(),
     [polygon.id]: http(),
@@ -22,6 +31,8 @@ const config = getDefaultConfig({
     [arbitrum.id]: http(),
     [base.id]: http(),
     [sepolia.id]: http(),
+    // J'ajoute l'URL officielle ici pour être sûr que ça connecte bien
+    [zkSync.id]: http('https://mainnet.era.zksync.io'), 
   },
 });
 

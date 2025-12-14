@@ -1,51 +1,70 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { ConnectButton, useConnectModal } from '@rainbow-me/rainbowkit';
 import { useAccount, useDisconnect } from 'wagmi';
 import WalletInfo from '../components/WalletInfo';
 import SmartTransfer from '../components/SmartTransfer';
 import TokenCard from '../components/TokenCard';
 import WalletRow from '../components/WalletRow';
-// import TotalBalance from '../components/TotalBalance'; // <-- On supprime l'ancien
-import PortfolioValue from '../components/PortfolioValue'; // <-- On importe le nouveau
+import PortfolioValue from '../components/PortfolioValue';
+import ImportToken from '../components/ImportToken'; 
 
-// --- CONFIGURATION TOKENS ---
-// src/app/page.tsx
-
-// --- CONFIGURATION ÉLARGIE (Top Defi & Meme coins) ---
-const TOKEN_MAP: Record<number, { address: `0x${string}`; name: string; symbol: string; coingeckoId: string }[]> = {
-  // Ethereum Mainnet
+// --- MEGA LISTE DES TOKENS (Comme MetaMask + zkSync) ---
+const DEFAULT_TOKENS: Record<number, { address: `0x${string}`; name: string; symbol: string; coingeckoId: string }[]> = {
+  // === Ethereum Mainnet (ID: 1) ===
   1: [
-    { symbol: 'USDT', name: 'Tether', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', coingeckoId: 'tether' },
+    { symbol: 'USDT', name: 'Tether USD', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', coingeckoId: 'tether' },
     { symbol: 'USDC', name: 'USD Coin', address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', coingeckoId: 'usd-coin' },
-    { symbol: 'DAI', name: 'Dai', address: '0x6b175474e89094c44da98b954eedeac495271d0f', coingeckoId: 'dai' },
+    { symbol: 'DAI', name: 'Dai Stablecoin', address: '0x6b175474e89094c44da98b954eedeac495271d0f', coingeckoId: 'dai' },
     { symbol: 'WBTC', name: 'Wrapped BTC', address: '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599', coingeckoId: 'wrapped-bitcoin' },
-    { symbol: 'UNI', name: 'Uniswap', address: '0x1f9840a85d5af5bf1d1762f925bdaddc4201f984', coingeckoId: 'uniswap' },
-    { symbol: 'LINK', name: 'Chainlink', address: '0x514910771af9ca656af840dff83e8264ecf986ca', coingeckoId: 'chainlink' },
+    { symbol: 'ETH', name: 'WETH', address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', coingeckoId: 'ethereum' },
     { symbol: 'PEPE', name: 'Pepe', address: '0x6982508145454Ce325dDbE47a25d4ec3d2311933', coingeckoId: 'pepe' },
     { symbol: 'SHIB', name: 'Shiba Inu', address: '0x95ad61b0a150d79219dcf64e1e6cc01f0b64c4ce', coingeckoId: 'shiba-inu' },
+    { symbol: 'LINK', name: 'Chainlink', address: '0x514910771af9ca656af840dff83e8264ecf986ca', coingeckoId: 'chainlink' },
+    { symbol: 'UNI', name: 'Uniswap', address: '0x1f9840a85d5af5bf1d1762f925bdaddc4201f984', coingeckoId: 'uniswap' },
     { symbol: 'AAVE', name: 'Aave', address: '0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9', coingeckoId: 'aave' },
   ],
-  // Binance Smart Chain (BSC)
+  
+  // === Binance Smart Chain (ID: 56) ===
   56: [
-    { symbol: 'USDT', name: 'Tether', address: '0x55d398326f99059fF775485246999027B3197955', coingeckoId: 'tether' },
+    { symbol: 'USDT', name: 'Tether USD', address: '0x55d398326f99059fF775485246999027B3197955', coingeckoId: 'tether' },
     { symbol: 'USDC', name: 'USD Coin', address: '0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d', coingeckoId: 'usd-coin' },
-    { symbol: 'DAI', name: 'Dai', address: '0x1af3f329e8be154074d8769d1ffa4ee058b1dbc3', coingeckoId: 'dai' },
-    { symbol: 'WBNB', name: 'Wrapped BNB', address: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c', coingeckoId: 'wbnb' },
+    { symbol: 'BUSD', name: 'Binance USD', address: '0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56', coingeckoId: 'binance-usd' },
     { symbol: 'CAKE', name: 'PancakeSwap', address: '0x0e09fabb73bd3ade0a17ecc321fd13a19e81ce82', coingeckoId: 'pancakeswap-token' },
+    { symbol: 'WBNB', name: 'Wrapped BNB', address: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c', coingeckoId: 'binancecoin' },
   ],
-  // Polygon
+  
+  // === Polygon (ID: 137) ===
   137: [
-    { symbol: 'USDT', name: 'Tether', address: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F', coingeckoId: 'tether' },
-    { symbol: 'USDC', name: 'USD Coin', address: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', coingeckoId: 'usd-coin' },
+    { symbol: 'USDT', name: 'Tether USD', address: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F', coingeckoId: 'tether' },
+    { symbol: 'USDC', name: 'USD Coin (PoS)', address: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', coingeckoId: 'usd-coin' },
     { symbol: 'WETH', name: 'Wrapped ETH', address: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619', coingeckoId: 'ethereum' },
+    { symbol: 'WMATIC', name: 'Wrapped Matic', address: '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270', coingeckoId: 'matic-network' },
   ],
-   // Sepolia (Testnet) - On garde juste LINK pour tester
+
+  // === zkSync Era (ID: 324) - NOUVEAU ! ===
+  324: [
+    { symbol: 'USDC', name: 'USD Coin', address: '0x3355df6D4c9C3035724Fd0e3914dE96A5a83aaf4', coingeckoId: 'usd-coin' },
+    { symbol: 'USDT', name: 'Tether USD', address: '0x493257fD37EDB34451f62EDf8D2a0C418852bA4C', coingeckoId: 'tether' },
+    { symbol: 'ZK', name: 'ZKsync', address: '0x5A7d6b2F92C77FAD6CCaBd7EE0624E64907Eaf3E', coingeckoId: 'zksync' }, // Le token officiel
+    { symbol: 'WETH', name: 'Wrapped ETH', address: '0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91', coingeckoId: 'ethereum' },
+    { symbol: 'MUTE', name: 'Mute', address: '0x0e97C7a0F8B2C9885C8AC9fC6136e829CbC21d42', coingeckoId: 'mute' },
+  ],
+
+  // === Sepolia Testnet (ID: 11155111) ===
   11155111: [
-    { symbol: 'LINK', name: 'Chainlink', address: '0x779877A7B0D9E8603169DdbD7836e478b4624789', coingeckoId: 'chainlink' },
+    { symbol: 'LINK', name: 'Chainlink (Test)', address: '0x779877A7B0D9E8603169DdbD7836e478b4624789', coingeckoId: 'chainlink' },
   ],
 };
+
+// Interface pour nos tokens
+interface TokenType {
+  address: `0x${string}`;
+  name: string;
+  symbol: string;
+  coingeckoId: string;
+}
 
 export default function Home() {
   const { address: connectedAddress, isConnected, chainId } = useAccount();
@@ -55,16 +74,34 @@ export default function Home() {
   // --- ÉTATS ---
   const [myWallets, setMyWallets] = useState<string[]>([]);
   const [selectedWallets, setSelectedWallets] = useState<string[]>([]);
+  
+  // Gestion des Tokens Dynamiques (Importés)
+  const [customTokens, setCustomTokens] = useState<Record<number, TokenType[]>>({});
   const [selectedTokenAddress, setSelectedTokenAddress] = useState<string>('');
+  
   const [isLoaded, setIsLoaded] = useState(false);
   const [showSwitchModal, setShowSwitchModal] = useState(false);
+
+  // --- LISTE COMBINÉE (Défaut + Custom) ---
+  const currentTokens = useMemo(() => {
+    const activeChainId = chainId || 1;
+    const defaults = DEFAULT_TOKENS[activeChainId] || [];
+    const customs = customTokens[activeChainId] || [];
+    // On trie par nom pour faire propre
+    return [...defaults, ...customs].sort((a, b) => a.symbol.localeCompare(b.symbol));
+  }, [chainId, customTokens]);
+
 
   // --- PERSISTANCE ---
   useEffect(() => {
     const savedWallets = localStorage.getItem('myPortfolio_wallets');
     const savedSelection = localStorage.getItem('myPortfolio_selection');
+    const savedCustomTokens = localStorage.getItem('myPortfolio_customTokens');
+
     if (savedWallets) setMyWallets(JSON.parse(savedWallets));
     if (savedSelection) setSelectedWallets(JSON.parse(savedSelection));
+    if (savedCustomTokens) setCustomTokens(JSON.parse(savedCustomTokens));
+    
     setIsLoaded(true);
   }, []);
 
@@ -72,10 +109,11 @@ export default function Home() {
     if (isLoaded) {
       localStorage.setItem('myPortfolio_wallets', JSON.stringify(myWallets));
       localStorage.setItem('myPortfolio_selection', JSON.stringify(selectedWallets));
+      localStorage.setItem('myPortfolio_customTokens', JSON.stringify(customTokens));
     }
-  }, [myWallets, selectedWallets, isLoaded]);
+  }, [myWallets, selectedWallets, customTokens, isLoaded]);
 
-  // --- AUTO-ADD ---
+  // --- AUTO-ADD WALLET ---
   useEffect(() => {
     if (connectedAddress && isLoaded) {
       if (!myWallets.includes(connectedAddress)) {
@@ -87,13 +125,14 @@ export default function Home() {
     }
   }, [connectedAddress, isLoaded]); 
 
-  // --- TOKENS ---
-  const availableTokens = chainId ? TOKEN_MAP[chainId] || [] : [];
+  // --- TOKEN PAR DÉFAUT ---
   useEffect(() => {
-    if (availableTokens.length > 0 && !selectedTokenAddress) {
-        setSelectedTokenAddress(availableTokens[0].address);
+    if (currentTokens.length > 0 && !selectedTokenAddress) {
+        // On essaie de sélectionner USDT ou USDC par défaut s'ils existent
+        const defaultStable = currentTokens.find(t => t.symbol === 'USDT' || t.symbol === 'USDC');
+        setSelectedTokenAddress(defaultStable ? defaultStable.address : currentTokens[0].address);
     }
-  }, [chainId, availableTokens]);
+  }, [currentTokens, chainId]);
 
   // --- ACTIONS ---
   const removeWallet = (w: string) => {
@@ -118,17 +157,33 @@ export default function Home() {
     setTimeout(() => { if (openConnectModal) openConnectModal(); }, 200);
   };
 
+  const handleImportToken = (token: TokenType) => {
+    const activeChainId = chainId || 1;
+    const exists = customTokens[activeChainId]?.some(t => t.address.toLowerCase() === token.address.toLowerCase());
+    const existsInDefault = DEFAULT_TOKENS[activeChainId]?.some(t => t.address.toLowerCase() === token.address.toLowerCase());
+    
+    if (exists || existsInDefault) {
+      alert('Ce token est déjà dans votre liste !');
+      return;
+    }
+    setCustomTokens(prev => ({
+      ...prev,
+      [activeChainId]: [...(prev[activeChainId] || []), token]
+    }));
+  };
+
   if (!isLoaded) return <div className="min-h-screen bg-gray-950 flex items-center justify-center text-white">Chargement...</div>;
 
   return (
     <div className="flex min-h-screen bg-gray-950 text-white font-sans relative">
       
       {/* SIDEBAR */}
-      <div className="w-80 bg-gray-900 border-r border-gray-800 p-6 flex flex-col gap-6 h-screen sticky top-0">
+      <div className="w-80 bg-gray-900 border-r border-gray-800 p-6 flex flex-col gap-6 h-screen sticky top-0 overflow-y-auto">
         <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
           My Portfolio
         </h1>
         
+        {/* CONNEXION */}
         <div className="space-y-4">
           <div className="w-full">
             <div className="mb-4 p-3 bg-gray-800/50 rounded-lg border border-gray-700">
@@ -141,7 +196,8 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="flex-grow overflow-y-auto space-y-2 pt-2 border-t border-gray-800 mt-2">
+        {/* LISTE WALLETS */}
+        <div className="flex-grow space-y-2 pt-2 border-t border-gray-800 mt-2">
            <div className="flex justify-between items-center mt-4">
              <h3 className="text-xs text-gray-500 uppercase font-semibold">Mes Wallets ({myWallets.length})</h3>
              <button onClick={() => setSelectedWallets(myWallets)} className="text-[10px] text-blue-400 underline">Tout cocher</button>
@@ -155,24 +211,33 @@ export default function Home() {
              />
            ))}
         </div>
+
+        {/* IMPORT TOKEN */}
+        <div className="pt-6 border-t border-gray-800">
+            <ImportToken onImport={handleImportToken} />
+        </div>
       </div>
 
-      {/* MAIN CONTENT */}
+      {/* CONTENU PRINCIPAL */}
       <div className="flex-1 p-10 overflow-y-auto bg-gray-950">
         
         {/* HEADER */}
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-3xl font-bold">Vue d'ensemble</h2>
+          <div className="flex items-center gap-3">
+             <h2 className="text-3xl font-bold">Vue d'ensemble</h2>
+             {/* Badge Réseau Actif */}
+             {chainId === 324 && <span className="px-2 py-1 bg-slate-800 text-slate-200 text-xs rounded border border-slate-600">zkSync Era</span>}
+          </div>
           
-          {/* SÉLECTEUR DE TOKEN (Juste pour l'affichage détail) */}
-          {availableTokens.length > 0 && (
+          {/* SELECTEUR DE TOKEN AMÉLIORÉ */}
+          {currentTokens.length > 0 && (
             <div className="flex items-center gap-3">
-              <span className="text-xs text-gray-500">Détail token :</span>
+              <span className="text-xs text-gray-500">Actifs ({currentTokens.length}) :</span>
               <select 
-                className="bg-gray-800 border border-gray-700 rounded px-4 py-2 text-sm text-white focus:outline-none cursor-pointer"
+                className="bg-gray-800 border border-gray-700 rounded px-4 py-2 text-sm text-white focus:outline-none cursor-pointer max-w-[200px]"
                 value={selectedTokenAddress} onChange={(e) => setSelectedTokenAddress(e.target.value)}
               >
-                {availableTokens.map((token) => (
+                {currentTokens.map((token) => (
                   <option key={token.address} value={token.address}>{token.symbol}</option>
                 ))}
               </select>
@@ -180,17 +245,16 @@ export default function Home() {
           )}
         </div>
 
-        {/* --- LE NOUVEAU COMPOSANT VALEUR TOTALE --- */}
-        {/* Il calcule TOUT (ETH + Tokens) pour les wallets sélectionnés */}
+        {/* SCANNER DE FORTUNE */}
         {selectedWallets.length > 0 && (
           <PortfolioValue 
              wallets={selectedWallets} 
-             tokens={availableTokens} // On lui passe la liste des tokens à scanner
+             tokens={currentTokens} 
              chainId={chainId || 1}
           />
         )}
 
-        {/* CARTES DÉTAILLÉES */}
+        {/* GRILLE DES CARTES */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {selectedWallets.map(walletAddr => (
             <div key={walletAddr} className={`bg-gray-900 border rounded-xl p-6 shadow-xl space-y-4 transition-all ${walletAddr === connectedAddress ? 'border-green-500 shadow-green-900/20 shadow-lg' : 'border-gray-800'}`}>
@@ -226,21 +290,17 @@ export default function Home() {
         )}
       </div>
 
-      {/* MODALE DE CONFIRMATION */}
+      {/* MODALE SWITCH */}
       {showSwitchModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-sm w-full shadow-2xl scale-100 animate-in zoom-in-95 duration-200">
-            <h3 className="text-xl font-bold text-white mb-2">Changer de Wallet ?</h3>
+            <h3 className="text-xl font-bold text-white mb-2">Changer de Pilote ?</h3>
             <p className="text-gray-400 text-sm mb-6 leading-relaxed">
-              Pour connecter un nouveau compte, nous devons déconnecter le pilote actuel.
+              Pour changer de compte, nous devons déconnecter le pilote actuel.
             </p>
             <div className="flex gap-3">
-              <button onClick={() => setShowSwitchModal(false)} className="flex-1 px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-white font-semibold transition-colors border border-gray-700">
-                Retour
-              </button>
-              <button onClick={confirmSwitchWallet} className="flex-1 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold transition-colors shadow-lg shadow-blue-900/20">
-                Continuer
-              </button>
+              <button onClick={() => setShowSwitchModal(false)} className="flex-1 px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-white font-semibold transition-colors border border-gray-700">Retour</button>
+              <button onClick={confirmSwitchWallet} className="flex-1 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold transition-colors shadow-lg shadow-blue-900/20">Continuer</button>
             </div>
           </div>
         </div>
