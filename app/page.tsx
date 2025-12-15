@@ -3,12 +3,18 @@
 import { useState, useEffect, useMemo } from 'react';
 import { ConnectButton, useConnectModal } from '@rainbow-me/rainbowkit';
 import { useAccount, useDisconnect } from 'wagmi';
+
+// Composants
 import WalletInfo from '../components/WalletInfo';
 import SmartTransfer from '../components/SmartTransfer';
 import TokenCard from '../components/TokenCard';
 import WalletRow from '../components/WalletRow';
 import PortfolioValue from '../components/PortfolioValue';
 import ImportToken from '../components/ImportToken'; 
+import TokenScanner from '../components/TokenScanner';
+
+// Utils
+import { isValidBitcoinAddress } from '../utils/bitcoin'; // <-- Import indispensable
 
 // --- MEGA LISTE DES TOKENS (Comme MetaMask + zkSync) ---
 const DEFAULT_TOKENS: Record<number, { address: `0x${string}`; name: string; symbol: string; coingeckoId: string }[]> = {
@@ -43,11 +49,11 @@ const DEFAULT_TOKENS: Record<number, { address: `0x${string}`; name: string; sym
     { symbol: 'WMATIC', name: 'Wrapped Matic', address: '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270', coingeckoId: 'matic-network' },
   ],
 
-  // === zkSync Era (ID: 324) - NOUVEAU ! ===
+  // === zkSync Era (ID: 324) ===
   324: [
     { symbol: 'USDC', name: 'USD Coin', address: '0x3355df6D4c9C3035724Fd0e3914dE96A5a83aaf4', coingeckoId: 'usd-coin' },
     { symbol: 'USDT', name: 'Tether USD', address: '0x493257fD37EDB34451f62EDf8D2a0C418852bA4C', coingeckoId: 'tether' },
-    { symbol: 'ZK', name: 'ZKsync', address: '0x5A7d6b2F92C77FAD6CCaBd7EE0624E64907Eaf3E', coingeckoId: 'zksync' }, // Le token officiel
+    { symbol: 'ZK', name: 'ZKsync', address: '0x5A7d6b2F92C77FAD6CCaBd7EE0624E64907Eaf3E', coingeckoId: 'zksync' }, 
     { symbol: 'WETH', name: 'Wrapped ETH', address: '0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91', coingeckoId: 'ethereum' },
     { symbol: 'MUTE', name: 'Mute', address: '0x0e97C7a0F8B2C9885C8AC9fC6136e829CbC21d42', coingeckoId: 'mute' },
   ],
@@ -75,7 +81,10 @@ export default function Home() {
   const [myWallets, setMyWallets] = useState<string[]>([]);
   const [selectedWallets, setSelectedWallets] = useState<string[]>([]);
   
-  // Gestion des Tokens Dynamiques (Importés)
+  // Bitcoin State
+  const [btcInput, setBtcInput] = useState('');
+
+  // Gestion des Tokens Dynamiques
   const [customTokens, setCustomTokens] = useState<Record<number, TokenType[]>>({});
   const [selectedTokenAddress, setSelectedTokenAddress] = useState<string>('');
   
@@ -87,7 +96,6 @@ export default function Home() {
     const activeChainId = chainId || 1;
     const defaults = DEFAULT_TOKENS[activeChainId] || [];
     const customs = customTokens[activeChainId] || [];
-    // On trie par nom pour faire propre
     return [...defaults, ...customs].sort((a, b) => a.symbol.localeCompare(b.symbol));
   }, [chainId, customTokens]);
 
@@ -113,7 +121,7 @@ export default function Home() {
     }
   }, [myWallets, selectedWallets, customTokens, isLoaded]);
 
-  // --- AUTO-ADD WALLET ---
+  // --- AUTO-ADD EVM WALLET ---
   useEffect(() => {
     if (connectedAddress && isLoaded) {
       if (!myWallets.includes(connectedAddress)) {
@@ -128,7 +136,6 @@ export default function Home() {
   // --- TOKEN PAR DÉFAUT ---
   useEffect(() => {
     if (currentTokens.length > 0 && !selectedTokenAddress) {
-        // On essaie de sélectionner USDT ou USDC par défaut s'ils existent
         const defaultStable = currentTokens.find(t => t.symbol === 'USDT' || t.symbol === 'USDC');
         setSelectedTokenAddress(defaultStable ? defaultStable.address : currentTokens[0].address);
     }
@@ -157,19 +164,47 @@ export default function Home() {
     setTimeout(() => { if (openConnectModal) openConnectModal(); }, 200);
   };
 
-  const handleImportToken = (token: TokenType) => {
-    const activeChainId = chainId || 1;
-    const exists = customTokens[activeChainId]?.some(t => t.address.toLowerCase() === token.address.toLowerCase());
-    const existsInDefault = DEFAULT_TOKENS[activeChainId]?.some(t => t.address.toLowerCase() === token.address.toLowerCase());
-    
-    if (exists || existsInDefault) {
-      alert('Ce token est déjà dans votre liste !');
+  // --- BITCOIN ADD ---
+  const addBitcoinWallet = () => {
+    if (!isValidBitcoinAddress(btcInput)) {
+      alert("Adresse Bitcoin invalide (doit commencer par 1, 3 ou bc1)");
       return;
     }
-    setCustomTokens(prev => ({
-      ...prev,
-      [activeChainId]: [...(prev[activeChainId] || []), token]
-    }));
+    if (myWallets.includes(btcInput)) return;
+    
+    setMyWallets(prev => [...prev, btcInput]);
+    setSelectedWallets(prev => [...prev, btcInput]);
+    setBtcInput('');
+  };
+
+  // --- GESTION DES TOKENS CUSTOM ---
+  const addTokensToCustomList = (tokensToAdd: TokenType[]) => {
+    const activeChainId = chainId || 1;
+    
+    setCustomTokens(prev => {
+        const currentList = prev[activeChainId] || [];
+        const defaults = DEFAULT_TOKENS[activeChainId] || [];
+        
+        const reallyNew = tokensToAdd.filter(newT => 
+            !currentList.some(c => c.address.toLowerCase() === newT.address.toLowerCase()) &&
+            !defaults.some(d => d.address.toLowerCase() === newT.address.toLowerCase())
+        );
+
+        if (reallyNew.length === 0) return prev;
+
+        return {
+            ...prev,
+            [activeChainId]: [...currentList, ...reallyNew]
+        };
+    });
+  };
+
+  const handleImportToken = (token: TokenType) => {
+    addTokensToCustomList([token]);
+  };
+
+  const handleScanResults = (foundTokens: any[]) => {
+      addTokensToCustomList(foundTokens);
   };
 
   if (!isLoaded) return <div className="min-h-screen bg-gray-950 flex items-center justify-center text-white">Chargement...</div>;
@@ -196,6 +231,21 @@ export default function Home() {
           </div>
         </div>
 
+        {/* SECTION BITCOIN */}
+        <div className="mt-4 pt-4 border-t border-gray-800">
+          <p className="text-[10px] text-orange-500 uppercase font-bold mb-2">Suivre du Bitcoin (Watch Only)</p>
+          <div className="flex gap-2">
+            <input 
+              type="text" 
+              placeholder="Adresse BTC (bc1...)" 
+              className="w-full bg-gray-950 border border-gray-700 rounded px-2 py-2 text-xs text-white focus:outline-none focus:border-orange-500 font-mono"
+              value={btcInput} 
+              onChange={(e) => setBtcInput(e.target.value)}
+            />
+            <button onClick={addBitcoinWallet} className="bg-orange-700 hover:bg-orange-600 text-white px-2 rounded text-xs font-bold">OK</button>
+          </div>
+        </div>
+
         {/* LISTE WALLETS */}
         <div className="flex-grow space-y-2 pt-2 border-t border-gray-800 mt-2">
            <div className="flex justify-between items-center mt-4">
@@ -212,9 +262,12 @@ export default function Home() {
            ))}
         </div>
 
-        {/* IMPORT TOKEN */}
-        <div className="pt-6 border-t border-gray-800">
-            <ImportToken onImport={handleImportToken} />
+        {/* --- ZONE INTELLIGENTE (Scan & Import) --- */}
+        <div className="pb-4">
+            <TokenScanner onFoundTokens={handleScanResults} />
+            <div className="pt-6">
+                <ImportToken onImport={handleImportToken} />
+            </div>
         </div>
       </div>
 
@@ -225,11 +278,9 @@ export default function Home() {
         <div className="flex justify-between items-center mb-6">
           <div className="flex items-center gap-3">
              <h2 className="text-3xl font-bold">Vue d'ensemble</h2>
-             {/* Badge Réseau Actif */}
              {chainId === 324 && <span className="px-2 py-1 bg-slate-800 text-slate-200 text-xs rounded border border-slate-600">zkSync Era</span>}
           </div>
           
-          {/* SELECTEUR DE TOKEN AMÉLIORÉ */}
           {currentTokens.length > 0 && (
             <div className="flex items-center gap-3">
               <span className="text-xs text-gray-500">Actifs ({currentTokens.length}) :</span>
@@ -245,7 +296,7 @@ export default function Home() {
           )}
         </div>
 
-        {/* SCANNER DE FORTUNE */}
+        {/* SCANNER DE FORTUNE (Gère maintenant BTC aussi) */}
         {selectedWallets.length > 0 && (
           <PortfolioValue 
              wallets={selectedWallets} 
@@ -268,24 +319,35 @@ export default function Home() {
                 )}
               </div>
 
-              <WalletInfo address={walletAddr as `0x${string}`} />
-
-              {selectedTokenAddress && (
-                <div className="pt-2">
-                  <TokenCard 
-                    tokenAddress={selectedTokenAddress as `0x${string}`} 
-                    walletAddress={walletAddr}
-                  />
-                </div>
+              {/* Si c'est du Bitcoin, on affiche une info spéciale, sinon WalletInfo standard */}
+              {walletAddr.startsWith('0x') ? (
+                  <>
+                    <WalletInfo address={walletAddr as `0x${string}`} />
+                    {selectedTokenAddress && (
+                      <div className="pt-2">
+                        <TokenCard 
+                          tokenAddress={selectedTokenAddress as `0x${string}`} 
+                          walletAddress={walletAddr}
+                        />
+                      </div>
+                    )}
+                  </>
+              ) : (
+                  <div className="text-center py-4">
+                      <p className="text-orange-500 font-bold text-lg">BITCOIN WALLET</p>
+                      <p className="text-gray-500 text-xs mt-1">Inclus dans la Fortune Globale 👆</p>
+                  </div>
               )}
+
             </div>
           ))}
         </div>
 
-        {/* COUTEAU SUISSE */}
+        {/* COUTEAU SUISSE (Seulement pour les wallets EVM "0x...") */}
         {isConnected && (
           <div className="mt-12 pt-8 border-t border-gray-800">
-             <SmartTransfer myWallets={myWallets} />
+             {/* On filtre pour ne passer que les adresses EVM au module de transfert */}
+             <SmartTransfer myWallets={myWallets.filter(w => w.startsWith('0x'))} />
           </div>
         )}
       </div>
