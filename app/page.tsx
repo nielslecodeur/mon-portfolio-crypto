@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { ConnectButton, useConnectModal } from '@rainbow-me/rainbowkit';
 import { useAccount, useDisconnect } from 'wagmi';
 
-// Composants
+// --- COMPOSANTS ---
 import WalletInfo from '../components/WalletInfo';
 import SmartTransfer from '../components/SmartTransfer';
 import TokenCard from '../components/TokenCard';
@@ -12,11 +12,13 @@ import WalletRow from '../components/WalletRow';
 import PortfolioValue from '../components/PortfolioValue';
 import ImportToken from '../components/ImportToken'; 
 import TokenScanner from '../components/TokenScanner';
+import TransactionHistory from '../components/TransactionHistory';
+import GasTracker from '../components/GasTracker'; // <--- NOUVEAU
 
-// Utils
-import { isValidBitcoinAddress } from '../utils/bitcoin'; // <-- Import indispensable
+// --- UTILS ---
+import { isValidBitcoinAddress } from '../utils/bitcoin';
 
-// --- MEGA LISTE DES TOKENS (Comme MetaMask + zkSync) ---
+// --- MEGA LISTE DES TOKENS ---
 const DEFAULT_TOKENS: Record<number, { address: `0x${string}`; name: string; symbol: string; coingeckoId: string }[]> = {
   // === Ethereum Mainnet (ID: 1) ===
   1: [
@@ -81,17 +83,17 @@ export default function Home() {
   const [myWallets, setMyWallets] = useState<string[]>([]);
   const [selectedWallets, setSelectedWallets] = useState<string[]>([]);
   
-  // Bitcoin State
+  // Bitcoin
   const [btcInput, setBtcInput] = useState('');
 
-  // Gestion des Tokens Dynamiques
+  // Tokens Custom (Import + Scan)
   const [customTokens, setCustomTokens] = useState<Record<number, TokenType[]>>({});
   const [selectedTokenAddress, setSelectedTokenAddress] = useState<string>('');
   
   const [isLoaded, setIsLoaded] = useState(false);
   const [showSwitchModal, setShowSwitchModal] = useState(false);
 
-  // --- LISTE COMBINÉE (Défaut + Custom) ---
+  // --- LISTE TOKEN CALCULÉE ---
   const currentTokens = useMemo(() => {
     const activeChainId = chainId || 1;
     const defaults = DEFAULT_TOKENS[activeChainId] || [];
@@ -100,7 +102,7 @@ export default function Home() {
   }, [chainId, customTokens]);
 
 
-  // --- PERSISTANCE ---
+  // --- PERSISTANCE (LocalStorage) ---
   useEffect(() => {
     const savedWallets = localStorage.getItem('myPortfolio_wallets');
     const savedSelection = localStorage.getItem('myPortfolio_selection');
@@ -133,7 +135,7 @@ export default function Home() {
     }
   }, [connectedAddress, isLoaded]); 
 
-  // --- TOKEN PAR DÉFAUT ---
+  // --- SELECTION PAR DEFAUT ---
   useEffect(() => {
     if (currentTokens.length > 0 && !selectedTokenAddress) {
         const defaultStable = currentTokens.find(t => t.symbol === 'USDT' || t.symbol === 'USDC');
@@ -141,7 +143,7 @@ export default function Home() {
     }
   }, [currentTokens, chainId]);
 
-  // --- ACTIONS ---
+  // --- ACTIONS WALLETS ---
   const removeWallet = (w: string) => {
     const newList = myWallets.filter(x => x !== w);
     setMyWallets(newList);
@@ -164,7 +166,7 @@ export default function Home() {
     setTimeout(() => { if (openConnectModal) openConnectModal(); }, 200);
   };
 
-  // --- BITCOIN ADD ---
+  // --- ACTIONS BITCOIN ---
   const addBitcoinWallet = () => {
     if (!isValidBitcoinAddress(btcInput)) {
       alert("Adresse Bitcoin invalide (doit commencer par 1, 3 ou bc1)");
@@ -177,7 +179,7 @@ export default function Home() {
     setBtcInput('');
   };
 
-  // --- GESTION DES TOKENS CUSTOM ---
+  // --- ACTIONS TOKENS (Scan & Import) ---
   const addTokensToCustomList = (tokensToAdd: TokenType[]) => {
     const activeChainId = chainId || 1;
     
@@ -212,13 +214,13 @@ export default function Home() {
   return (
     <div className="flex min-h-screen bg-gray-950 text-white font-sans relative">
       
-      {/* SIDEBAR */}
+      {/* SIDEBAR GAUCHE */}
       <div className="w-80 bg-gray-900 border-r border-gray-800 p-6 flex flex-col gap-6 h-screen sticky top-0 overflow-y-auto">
         <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
           My Portfolio
         </h1>
         
-        {/* CONNEXION */}
+        {/* BOUTON DE CONNEXION */}
         <div className="space-y-4">
           <div className="w-full">
             <div className="mb-4 p-3 bg-gray-800/50 rounded-lg border border-gray-700">
@@ -231,7 +233,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* SECTION BITCOIN */}
+        {/* SECTION AJOUT BITCOIN */}
         <div className="mt-4 pt-4 border-t border-gray-800">
           <p className="text-[10px] text-orange-500 uppercase font-bold mb-2">Suivre du Bitcoin (Watch Only)</p>
           <div className="flex gap-2">
@@ -246,7 +248,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* LISTE WALLETS */}
+        {/* LISTE DES WALLETS */}
         <div className="flex-grow space-y-2 pt-2 border-t border-gray-800 mt-2">
            <div className="flex justify-between items-center mt-4">
              <h3 className="text-xs text-gray-500 uppercase font-semibold">Mes Wallets ({myWallets.length})</h3>
@@ -262,7 +264,7 @@ export default function Home() {
            ))}
         </div>
 
-        {/* --- ZONE INTELLIGENTE (Scan & Import) --- */}
+        {/* ZONE DE SCAN & IMPORT */}
         <div className="pb-4">
             <TokenScanner onFoundTokens={handleScanResults} />
             <div className="pt-6">
@@ -271,13 +273,17 @@ export default function Home() {
         </div>
       </div>
 
-      {/* CONTENU PRINCIPAL */}
+      {/* CONTENU PRINCIPAL (MAIN) */}
       <div className="flex-1 p-10 overflow-y-auto bg-gray-950">
         
         {/* HEADER */}
         <div className="flex justify-between items-center mb-6">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
              <h2 className="text-3xl font-bold">Vue d'ensemble</h2>
+             
+             {/* --- ICI LE GAS TRACKER --- */}
+             <GasTracker />
+
              {chainId === 324 && <span className="px-2 py-1 bg-slate-800 text-slate-200 text-xs rounded border border-slate-600">zkSync Era</span>}
           </div>
           
@@ -296,7 +302,7 @@ export default function Home() {
           )}
         </div>
 
-        {/* SCANNER DE FORTUNE (Gère maintenant BTC aussi) */}
+        {/* SCANNER DE FORTUNE GLOBALE */}
         {selectedWallets.length > 0 && (
           <PortfolioValue 
              wallets={selectedWallets} 
@@ -319,7 +325,7 @@ export default function Home() {
                 )}
               </div>
 
-              {/* Si c'est du Bitcoin, on affiche une info spéciale, sinon WalletInfo standard */}
+              {/* LOGIQUE D'AFFICHAGE (BTC vs EVM) */}
               {walletAddr.startsWith('0x') ? (
                   <>
                     <WalletInfo address={walletAddr as `0x${string}`} />
@@ -343,16 +349,20 @@ export default function Home() {
           ))}
         </div>
 
-        {/* COUTEAU SUISSE (Seulement pour les wallets EVM "0x...") */}
+        {/* HISTORIQUE DES TRANSACTIONS */}
+        {isConnected && (
+           <TransactionHistory />
+        )}
+
+        {/* COUTEAU SUISSE (Transfert) */}
         {isConnected && (
           <div className="mt-12 pt-8 border-t border-gray-800">
-             {/* On filtre pour ne passer que les adresses EVM au module de transfert */}
              <SmartTransfer myWallets={myWallets.filter(w => w.startsWith('0x'))} />
           </div>
         )}
       </div>
 
-      {/* MODALE SWITCH */}
+      {/* MODALE DE CHANGEMENT DE PILOTE */}
       {showSwitchModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-sm w-full shadow-2xl scale-100 animate-in zoom-in-95 duration-200">
